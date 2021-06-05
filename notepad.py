@@ -1,15 +1,27 @@
+from __future__ import print_function
 import tkinter
 from tkinter import LEFT,RIGHT,BOTH,END,ttk,messagebox,filedialog
 import tkinter.font as tkFont
+import os.path
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from apiclient import errors
+from googleapiclient.http import MediaFileUpload
+import mimetypes
+
 
 #window
 root = tkinter.Tk()
-root.resizable(0,0)
+root.resizable(1,1)
 root.geometry('1000x600')
+root.wm_minsize(1000,600)
 root.iconbitmap('notepad.ico')
 root.title('Notepad')
 file_name = ''
 prev_length = 0
+# mime_type =  "*/*"#'text/plain'
 
 #Functions
 def full_screen_mode(event):
@@ -26,6 +38,56 @@ def hide_options_frame(event):
 
 def command(event):
     print("hi")
+
+def create_google_drive_service():
+    creds = None
+    service = None
+    SCOPES = ['https://www.googleapis.com/auth/drive']
+    try:
+        if os.path.exists('token.json'):
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'credentials.json', SCOPES)
+                creds = flow.run_local_server(port=0)
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
+        service = build('drive', 'v3', credentials=creds)
+    except Exception:
+        messagebox.showerror('Google Drive', 'Error occurred while connecting to google drive api')
+    return service
+
+def insert_file(event):
+  service  = create_google_drive_service()
+  if(service != None):  
+    global file_name
+    print(file_name)
+    mime_type = get_mime_type(file_name)
+    print(mime_type)
+    media_body = MediaFileUpload(file_name, mimetype=mime_type, resumable=True)
+    body = {
+        'name': file_name,
+    }
+    try:
+        file = service.files().create(
+            body=body,
+            media_body=media_body).execute()
+        messagebox.showinfo('Upload File', 'File has been successfully uploaded')
+        print(file)
+        return file
+    except errors.HttpError as error:
+        messagebox.showerror('Upload File','An error occurred: %s' % error)
+        return None
+  return; 
+
+def get_mime_type(file_name):
+    try:
+        return mimetypes.MimeTypes().guess_type('my_file.txt')[0]
+    except Exception:
+        return '*/*'
 
 def display_option_widgets():
     new_file.grid(row = 0,column=0,padx=10)
@@ -108,14 +170,14 @@ save_file.bind("<Button-1>", save_note)
 
 save_to_cloud_image = tkinter.PhotoImage(file = 'cloud.png')
 save_to_cloud = tkinter.Label(options_frame,image=save_to_cloud_image,bg=options_frame_color)
-save_to_cloud.bind("<Button-1>", command)
+save_to_cloud.bind("<Button-1>", insert_file)
 
 share_file_image = tkinter.PhotoImage(file= 'sendemail.png')
 share_file = tkinter.Label(options_frame,image=share_file_image,bg=options_frame_color)
 share_file.bind("<Button-1>", command)
 
 my_scroll_bar = ttk.Scrollbar(root,orient = 'vertical')
-text = tkinter.Text(root,yscrollcommand = my_scroll_bar.set,font=my_font,bg=text_box_color)
+text = tkinter.Text(root,yscrollcommand = my_scroll_bar.set,font=my_font,bg=text_box_color,undo=True)
 my_scroll_bar.config(command=text.yview)
 
 display_option_widgets()
@@ -126,6 +188,7 @@ root.bind_all("<Escape>",lambda event: root.attributes("-fullscreen",False))
 root.bind_all("<Control-s>",save_note)
 root.bind_all("<Control-n>",new_note)
 root.bind_all("<Control-o>",open_note)
+root.bind_all("<Control-u>",insert_file)
 text.bind("<Key>",note_changed)
 
 #mainloop
